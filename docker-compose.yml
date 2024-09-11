@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities:
+                - gpu
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - 11434:11434
+    container_name: ollama
+    pull_policy: always
+    tty: true
+    restart: unless-stopped
+    image: ollama/ollama:latest
+    
+
+  backend:
+    # Se especifica el dockerfile que se va a utilizar para construir la imagen.
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities:
+                - gpu
+
+    # Montar la carpeta de la aplicacion en el contenedor.
+    volumes:
+      - .:/app
+
+    ports:
+      - 9012:9012
+
+    # Se especifica el nombre del contenedor.
+    container_name: llm_client
+
+    tty: true
+    restart: unless-stopped
+     
+volumes:
+  ollama: {}
+
+networks:
+  default:
+    name: nvidia-llm
+
+
+
