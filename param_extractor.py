@@ -17,13 +17,13 @@ from langchain_chroma import Chroma
 from langchain_community.document_loaders import OnlinePDFLoader
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_ollama.llms import OllamaLLM
-# Importar el tipado List
 from typing import List
 from langchain.schema import StrOutputParser
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema.runnable import RunnableBranch
-
-
+from langchain_core.tools import BaseTool
+import unicodedata
+import string
 
 ## Definition of RExtract
 def RExtract(pydantic_class, llm, prompt):
@@ -50,13 +50,6 @@ def RExtract(pydantic_class, llm, prompt):
 def parameter_extractor(pydantic_class, user_query):
     instruct_llm = OllamaLLM(model="gemma2:9b", base_url="http://ollama:11434")# "gemma2:2b" o "gemma2:9b"
 
-    # parser_prompt = ChatPromptTemplate.from_template(
-    #     "Eres un asistente virtual que representa al buscador de medicamentos SearchMed, y estás intentando rastrear información sobre la conversación."
-    #     " Acabas de recibir un mensaje del usuario. Por favor, completa el esquema basado en la conversación. No inventes nueva información que no esté en el mensaje del usuario."
-    #     "\n\n{format_instructions}"
-    #     "\n\nMENSAJE DEL USUARIO: {input}"
-    #     "\n\nBASE DE CONOCIMIENTOS: "
-    # )
     parser_prompt = ChatPromptTemplate.from_template(
         "Eres un asistente virtual especializado en la búsqueda de información de medicamentos para el servicio SearchMed. "
         "Tu objetivo es extraer información relevante de la conversación actual del usuario de manera precisa y concisa. "
@@ -92,6 +85,7 @@ def search_queries_about_drug(drug_info: ListaMedicamentos, user_query: str):
   
     documents_urls = [doc.url for doc in drug_info.docs]
 
+    # Load only the first document for testing purposes
     documents_urls = documents_urls[:1]
 
     loaded_documents = []
@@ -99,9 +93,6 @@ def search_queries_about_drug(drug_info: ListaMedicamentos, user_query: str):
         doc = OnlinePDFLoader(file_path=url).load_and_split()
         loaded_documents.extend(doc)
         print(f"Documento cargado y dividido desde {url}")
-  
-    # Quedarse solo con los 10 primeros documentos
-    # loaded_documents = loaded_documents[:10]
     
     # Inicializar el embebido y almacenamiento vectorial
     embedder = OllamaEmbeddings(model="all-minilm", base_url="http://ollama:11434")
@@ -135,21 +126,6 @@ def search_queries_about_drug(drug_info: ListaMedicamentos, user_query: str):
   
     return response
 
-
-# Prueba de la funcion
-knowledge = parameter_extractor(MedicamentoQueryParams, "Quiero obtener informacion sobre el medicamento con codigo nacional 726684")#"Dame informacion sobre el medicamento cuyo codigo nacional es 711187"
-medicamento = get_medicamento(knowledge)
-print(medicamento)
-
-# knowledge = parameter_extractor(MedicamentosQueryParams, "Quiero una lista de medicamentos que contengan almagato como principio activo")
-# medicamento = get_medicamento(knowledge)
-# print(medicamento)
-
-# knowledge = parameter_extractor(MedicamentosQueryParams, "Dame informacion sobre el medicamentos con triangulo negro")
-# medicamentos = get_medicamentos(knowledge)
-# print(medicamentos)
-
-from langchain_core.tools import BaseTool
 
 class EndpointMedicamentoTool(BaseTool):
     """
@@ -194,8 +170,7 @@ class EndpointMedicamentosTool(BaseTool):
 
 # Función para limpiar y normalizar la query
 def normalize_query(query: str) -> str:
-    import unicodedata
-    import string
+    
     # Eliminar acentos y convertir a minúsculas
     query = unicodedata.normalize('NFKD', query).encode('ascii', 'ignore').decode('utf-8').lower()
     # Eliminar puntuación y espacios
@@ -214,35 +189,23 @@ def route(info):
     else:
         return EndpointMedicamentosTool()
 
-if False:
+
+def answer_question(user_query: str) -> str:
     # Crear la cadena principal utilizando RunnableLambda para enrutamiento
     full_chain = {"query": lambda x: x["query"]} | RunnableLambda(route)
+    response = full_chain.invoke({"query": user_query}) # Response es un objeto Pydantic con las respuestas de la AEMPS
 
-    # Ejemplo de uso del router
-    response = full_chain.invoke({"query": "Quiero obtener información sobre el medicamento con código nacional 726684"})
-    print(response)
-    # Imprimir un espacio en blanco
-    print("\n\n\n")
+    if isinstance(response, list):
+        medicamento = response[0]
+    else:
+        medicamento = response
 
-    response = full_chain.invoke({"query": "Quiero obtener información sobre la aspirina vía oral"})
-    print(response)
+    answer_question = search_queries_about_drug(medicamento, user_query)
+    return answer_question
 
+if __name__ == "__main__":
+    
+    print(answer_question("Quiero obtener información general sobre el medicamento con código nacional 726684"))
+    print(answer_question("¿Es el medicamento con codigo nacional 726684 apto para mujeres embarazadas?"))
+    print(answer_question("¿Qué reacciones adversas puede tener la aspirina?"))
 
-
-
-
-
-
-
-
-# drug_info = obtener_informacion_del_medicamento()
-# user_query = "¿Este medicamento es apto para mujeres embarazadas?"
-
-
-
-
-# user_query = "¿Este medicamento es apto para mujeres embarazadas?"
-user_query = "¿Qué reacciones adversas puede tener este medicamento?"
-response = search_queries_about_drug(medicamento, user_query)
-print(f"Pregunta del usuario: {user_query}")
-print(f"Respuesta del sistema: {response}")
